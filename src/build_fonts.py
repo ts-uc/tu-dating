@@ -6,7 +6,7 @@ Run from the repository root with:
 """
 
 from pathlib import Path
-import re
+from xml.etree import ElementTree
 
 import fontforge
 
@@ -35,21 +35,55 @@ GLYPHS = {
 
 def svg_width(path):
     """Read the SVG canvas width; its built-in side margins are preserved."""
-    text = path.read_text(encoding="utf-8")
-    match = re.search(r"\bwidth\s*=\s*[\"']([0-9.]+)", text)
-    return round(float(match.group(1))) if match else UPM
+    root = ElementTree.parse(path).getroot()
+    width = root.get("width")
+    if width is None:
+        raise ValueError(f"SVG has no width: {path}")
+
+    try:
+        value = round(float(width))
+    except ValueError as error:
+        raise ValueError(f"SVG width must be unitless font units: {path}: {width}") from error
+
+    if value <= 0:
+        raise ValueError(f"SVG width must be positive: {path}: {width}")
+    return value
 
 
 def add_name(font, language, name, value):
-    # FontForge raises on a name that is not supported by an older build.
-    # Metadata is useful but must not prevent font generation.
-    try:
-        font.appendSFNTName(language, name, value)
-    except Exception:
-        pass
+    font.appendSFNTName(language, name, value)
 
 
-def build(style_directory, postscript_name, full_name, japanese_full_name, width_class):
+def add_notdef(font, width):
+    """Add a visible .notdef glyph whose width fits the font's metrics."""
+    glyph = font.createChar(-1, ".notdef")
+    outer_margin = max(round(width * 0.1), 20)
+    inner_margin = max(round(width * 0.2), outer_margin + 20)
+
+    pen = glyph.glyphPen()
+    pen.moveTo((outer_margin, 0))
+    pen.lineTo((width - outer_margin, 0))
+    pen.lineTo((width - outer_margin, 700))
+    pen.lineTo((outer_margin, 700))
+    pen.closePath()
+    pen.moveTo((inner_margin, 50))
+    pen.lineTo((width - inner_margin, 50))
+    pen.lineTo((width - inner_margin, 650))
+    pen.lineTo((inner_margin, 650))
+    pen.closePath()
+    pen = None
+    glyph.correctDirection()
+    glyph.width = width
+
+
+def build(
+    style_directory,
+    postscript_name,
+    subfamily,
+    full_name,
+    japanese_full_name,
+    width_class,
+):
     source_root = SVG_ROOT / style_directory
     output_path = OUTPUT_ROOT / f"{postscript_name}.ttf"
 
@@ -87,9 +121,13 @@ def build(style_directory, postscript_name, full_name, japanese_full_name, width
     font.os2_xheight = 520
     font.os2_weight = 400
     font.os2_width = width_class
+    font.os2_use_typo_metrics = True
+    font.os2_vendor = "NYUU"
 
     add_name(font, "English (US)", "Family", "TU Dating")
-    add_name(font, "English (US)", "SubFamily", "Regular")
+    add_name(font, "English (US)", "SubFamily", subfamily)
+    add_name(font, "English (US)", "Preferred Family", "TU Dating")
+    add_name(font, "English (US)", "Preferred Styles", subfamily)
     add_name(font, "English (US)", "Fullname", full_name)
     add_name(font, "English (US)", "Version", "Version 0.2.0")
     add_name(font, "English (US)", "Designer", "Nono Yuu")
@@ -97,13 +135,31 @@ def build(style_directory, postscript_name, full_name, japanese_full_name, width
     add_name(font, "English (US)", "License", "SIL Open Font License, Version 1.1")
     add_name(font, "English (US)", "License URL", "https://openfontlicense.org")
     add_name(font, "Japanese", "Family", "TUダッチング体")
+    add_name(font, "Japanese", "SubFamily", subfamily)
+    add_name(font, "Japanese", "Preferred Family", "TUダッチング体")
+    add_name(font, "Japanese", "Preferred Styles", subfamily)
     add_name(font, "Japanese", "Fullname", japanese_full_name)
 
+    glyph_sources = []
     for filename, character in GLYPHS.items():
         svg_path = source_root / filename
         if not svg_path.is_file():
             raise FileNotFoundError(f"Missing glyph SVG: {svg_path}")
+        glyph_sources.append((svg_path, character, svg_width(svg_path)))
 
+    maximum_width = max(width for _, _, width in glyph_sources)
+    add_notdef(font, maximum_width)
+    font.createChar(-1, ".null").width = 0
+    font.createChar(-1, "nonmarkingreturn").width = 0
+
+    # A text font should provide normal and non-breaking spaces even though
+    # they have no SVG outlines. Their width is half the tabular digit width.
+    digit_width = next(width for path, _, width in glyph_sources if path.name == "0.svg")
+    space_width = round(digit_width / 2)
+    font.createChar(0x0020).width = space_width
+    font.createChar(0x00A0).width = space_width
+
+    for svg_path, character, advance_width in glyph_sources:
         glyph = font.createChar(ord(character))
         glyph.importOutlines(str(svg_path))
         glyph.correctDirection()
@@ -112,7 +168,7 @@ def build(style_directory, postscript_name, full_name, japanese_full_name, width
 
         # Keep the SVG's own canvas and side margins, while adding no extra
         # spacing outside that canvas.
-        glyph.width = svg_width(svg_path)
+        glyph.width = advance_width
 
     OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
     font.generate(str(output_path), flags=["opentype"])
@@ -120,17 +176,24 @@ def build(style_directory, postscript_name, full_name, japanese_full_name, width
     print(f"Generated {output_path}")
 
 
-build(
-    "regular",
-    "TUDating-Regular",
-    "TU Dating Regular",
-    "TUダッチング体 Regular",
-    5,
-)
-build(
-    "compressed_regular",
-    "TUDating-CompressedRegular",
-    "TU Dating Compressed Regular",
-    "TUダッチング体 Compressed Regular",
-    2,
-)
+def main():
+    build(
+        "regular",
+        "TUDating-Regular",
+        "Regular",
+        "TU Dating Regular",
+        "TUダッチング体 Regular",
+        5,
+    )
+    build(
+        "compressed_regular",
+        "TUDating-CompressedRegular",
+        "Compressed Regular",
+        "TU Dating Compressed Regular",
+        "TUダッチング体 Compressed Regular",
+        2,
+    )
+
+
+if __name__ == "__main__":
+    main()
