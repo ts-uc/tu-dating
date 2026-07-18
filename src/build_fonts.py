@@ -15,6 +15,8 @@ ROOT = Path(__file__).resolve().parent.parent
 SVG_ROOT = ROOT / "svg"
 OUTPUT_ROOT = ROOT / "fonts"
 UPM = 1000
+DIGIT_GROUP_SPACE_CODEPOINT = 0xE000
+DIGIT_GROUP_SPACE_WIDTH = 50
 
 # Filename -> Unicode character.
 GLYPHS = {
@@ -156,6 +158,14 @@ def build(
     # Use space.svg's canvas width for both normal and non-breaking spaces.
     space_width = next(width for _, character, width in glyph_sources if character == " ")
     font.createChar(0x00A0).width = space_width
+
+    # U+E000 is a private-use spacer for padding compressed digit groups.
+    if style_directory == "compressed_regular":
+        digit_group_space = font.createChar(
+            DIGIT_GROUP_SPACE_CODEPOINT,
+            "digitgroupspace",
+        )
+        digit_group_space.width = DIGIT_GROUP_SPACE_WIDTH
 
     for svg_path, character, advance_width in glyph_sources:
         glyph = font.createChar(ord(character))
