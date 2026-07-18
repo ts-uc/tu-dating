@@ -2,9 +2,9 @@
 <!-- Created with Inkscape (http://www.inkscape.org/) -->
 
 <svg
-   width="350"
+   width="400"
    height="1000"
-   viewBox="0 0 350 1000"
+   viewBox="0 0 400 1000"
    version="1.1"
    id="svg1"
    xmlns="http://www.w3.org/2000/svg"
@@ -16,7 +16,7 @@
      transform="translate(-5610)">
     <path
        style="stroke-width:57.8;stroke-linecap:round;stroke-linejoin:round"
-       d="m 5785,900 a 40,40 0 0 0 -40,40 40,40 0 0 0 40,40 40,40 0 0 0 40,-40 40,40 0 0 0 -40,-40 z"
-       id="path28" />
+       d="m 5835,900 a 40,40 0 0 0 -40,40 40,40 0 0 0 40,40 40,40 0 0 0 40,-40 40,40 0 0 0 -40,-40 z"
+       id="path25" />
   </g>
 </svg>
