@@ -30,6 +30,7 @@ GLYPHS = {
     "9.svg": "9",
     "dot.svg": ".",
     "hyphen.svg": "-",
+    "space.svg": " ",
 }
 
 
@@ -152,19 +153,20 @@ def build(
     font.createChar(-1, ".null").width = 0
     font.createChar(-1, "nonmarkingreturn").width = 0
 
-    # A text font should provide normal and non-breaking spaces even though
-    # they have no SVG outlines. Their width is half the tabular digit width.
-    digit_width = next(width for path, _, width in glyph_sources if path.name == "0.svg")
-    space_width = round(digit_width / 2)
-    font.createChar(0x0020).width = space_width
+    # Use space.svg's canvas width for both normal and non-breaking spaces.
+    space_width = next(width for _, character, width in glyph_sources if character == " ")
     font.createChar(0x00A0).width = space_width
 
     for svg_path, character, advance_width in glyph_sources:
         glyph = font.createChar(ord(character))
-        glyph.importOutlines(str(svg_path))
-        glyph.correctDirection()
-        glyph.removeOverlap()
-        glyph.round()
+
+        # A space must remain outline-free. space.svg supplies its width only;
+        # the other SVG files supply both outlines and widths.
+        if character != " ":
+            glyph.importOutlines(str(svg_path))
+            glyph.correctDirection()
+            glyph.removeOverlap()
+            glyph.round()
 
         # Keep the SVG's own canvas and side margins, while adding no extra
         # spacing outside that canvas.
